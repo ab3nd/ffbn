@@ -102,12 +102,36 @@ class Genome(object):
 
     # Implements the "add connection" mutation. Connect two nodes that 
     # are not currently connected, preserving feed-forwardness
-    def add_connection():
-        # TODO not currently implemented because it can generate designs that are not electrically 
-        # realizable. If multiple outputs from one gate are connected to the same input, they are
-        # then connected to each other. If they are then driven to different levels, the result is 
-        # likely damage to the output drivers. 
-        pass
+    def add_connection(self):
+        # Cannot connect multiple outputs to one output node, that's basically wiring digital outputs
+        # to each other, which can lead to short circuits if they're driven to different levels. 
+        valid_nodes = list(filter(lambda node: node.get_type() is not NodeType.OUTPUT, self.nodes))
+        
+        # Check that they're not the same layer
+        got_connection = False
+        while not got_connection:
+            node_a, node_b = random.sample(valid_nodes, 2)
+            # Ensure they're not in the same layer
+            if node_a.layer > node_b.layer:
+                new_conn = Connection(node_b.get_innovation(), node_a.get_innovation(), self.innovation_counter)
+            elif node_a.layer < node_b.layer:
+                new_conn = Connection(node_a.get_innovation(), node_b.get_innovation(), self.innovation_counter)
+            else:
+                continue
+
+            # Check if the connection already exists
+            got_connection = True
+            for conn in self.connections:
+                if conn.input == new_conn.input and conn.output == new_conn.output:
+                    # This is effectively the same connection
+                    got_connection = False
+                    break
+            
+            # Ok, passed both checks, so keep the connection and increment innovation
+            if got_connection:
+                self.connections.append(new_conn)
+                self.innovation_counter += 1
+        
 
     # Implements the "add node" mutation. Select a connection, deactivate it, replace it with a node
     # that has the connection's inputs and outputs. Since this is for 2+ input gates, also connect
@@ -247,6 +271,7 @@ if __name__ == "__main__":
     g = Genome(5, 1)
     for ii in range(10):
         g.add_node()
+        g.add_connection()
         dot_print(g, f"add_{ii}_nodes.dot")
         evaluate(g, True)
 
