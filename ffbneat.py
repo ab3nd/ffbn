@@ -114,7 +114,7 @@ class Genome(object):
     # the other input of the gate to some node's output, preserving feed-forwardness. 
     def add_node(self):
         # Pick a random connection and deactivate it
-        conn = random.choice(self.connections)
+        conn = random.choice([c for c in self.connections if c.enabled])
         conn.enabled = False
         
         # Get the layer between the two things the connection used to connect
@@ -181,13 +181,17 @@ def build_expression(genome, node):
         out_node = list(filter(lambda node: node.innovation == node_innov, genome.nodes))[0]
         return f"out_{node.innovation} = {build_expression(genome, out_node)}"
     elif node.get_type() is NodeType.AND:
-        return " AND  ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        expr =  " AND  ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        return f"({expr})"
     elif node.get_type() is NodeType.OR:
-        return " OR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        expr = " OR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        return f"({expr})"
     elif node.get_type() is NodeType.NAND:
-        return " NAND ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        expr = " NAND ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        return f"({expr})"
     elif node.get_type() is NodeType.NOR:
-        return " NOR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        expr = " NOR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+        return f"({expr})"
     elif node.get_type() is NodeType.INPUT:
         return f"in_{node.innovation}"
 
