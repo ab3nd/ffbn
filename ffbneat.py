@@ -268,7 +268,7 @@ if __name__ == "__main__":
     # total_population = 100
     # population = []
 
-    g = Genome(5, 1)
+    g = Genome(5, 3)
     for ii in range(10):
         g.add_node()
         g.add_connection()
