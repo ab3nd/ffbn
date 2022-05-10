@@ -44,14 +44,14 @@ class Node(object):
             # Pick a random type that's not input or output
             self.node_type = random.choice([NodeType.AND, NodeType.OR, NodeType.NAND, NodeType.NOR])
         
-        def get_type():
-            return self.node_type
-        
-        def get_innovation():
-            return self.innovation
+    def get_type(self):
+        return self.node_type
+    
+    def get_innovation(self):
+        return self.innovation
 
 class Connection(object):
-    def __init__(self, input, output, enabled = True, innovation):
+    def __init__(self, input, output, innovation, enabled = True):
         self.input = input
         self.output = output
         self.enabled = enabled
@@ -119,11 +119,11 @@ class Genome(object):
 # and crossover will be the one that starts actually doing anything. 
 
 # TODO think some about what a proper representation is. It's possible to build a whole representation of 
-# e.g. MNIST in this format
-xor = {[0,0]:[0],
-       [0,1]:[1],
-       [1,0]:[1],
-       [1,1]:[1]}
+# e.g. MNIST in this format, but lists aren't hashable
+# xor = {[0,0]:[0],
+#        [0,1]:[1],
+#        [1,0]:[1],
+#        [1,1]:[1]}
 
 def evaluate(genome, truth):
     # TODO convert genome into a boolean expression
@@ -139,6 +139,18 @@ def evaluate(genome, truth):
     
     #Score is how many rows this expression got right out of a truth table
     return score/len(truth)
+
+
+def dot_print(genome, filename):
+    # Convert a genome into a dot file for rendering
+    with open(filename, 'w') as dotfile:
+        dotfile.write("digraph {\n")
+        for conn in genome.connections:
+            dotfile.write(f"\t{conn.input} -> {conn.output}")
+        dotfile.write("}")
+
+
+    
 if __name__ == "__main__":
     input_count = 2
     output_count = 1
@@ -148,7 +160,10 @@ if __name__ == "__main__":
     for ii in range(total_population):
         population.append(Genome(input_count, output_count))
 
+    for idx, genome in enumerate(population):
+        dot_print(genome, f"{idx}_genome.dot")
+
     # For each genome, evaluate it
-    scores = []
-    for g in population:
-        scores.append(evaluate(g, xor))
+    # scores = []
+    # for g in population:
+    #     scores.append(evaluate(g, xor))
