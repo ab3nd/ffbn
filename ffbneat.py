@@ -37,13 +37,18 @@ class NodeType(Enum):
     OUTPUT = 6 # Special class for representing the output, can't have connections coming from it
 
 class Node(object):
-    def __init__(self, innovation, node_type = None):
+    def __init__(self, innovation, layer = 0.0, node_type = None):
         self.innovation = innovation
         self.node_type = node_type
+        self.layer = layer
         if self.node_type is None:
             # Pick a random type that's not input or output
             self.node_type = random.choice([NodeType.AND, NodeType.OR, NodeType.NAND, NodeType.NOR])
-        
+        elif self.node_type is NodeType.OUTPUT:
+            self.layer = 1.0
+        elif self.node_type is NodeType.INPUT:
+            self.layer = 0.0
+
     def get_type(self):
         return self.node_type
     
@@ -58,6 +63,11 @@ class Connection(object):
         self.innovation = innovation
 
 class Genome(object):
+    # TODO in order to maintain feed-forward condition, the genome is going to have to organize 
+    # the nodes into layers, and only connect from nodes of lower layers to nodes of higher 
+    # layers. The actual layers themselves are pretty arbitrary, as long as the ordering is enforced. 
+    # Since I kind of want arbitrary layers, the layer is floating point, and a new node has a layer
+    # value of the average of its input and output's layers. 
     def __init__(self, input_count, output_count):
         self.connections = []
         self.nodes = []
@@ -65,11 +75,11 @@ class Genome(object):
 
         # Generate input and output nodes
         for ii in range(input_count):
-            self.nodes.append(Node(self.innovation_counter, NodeType.INPUT))
+            self.nodes.append(Node(self.innovation_counter, node_type=NodeType.INPUT))
             self.innovation_counter += 1
 
         for ii in range(output_count):
-            self.nodes.append(Node(self.innovation_counter, NodeType.OUTPUT))
+            self.nodes.append(Node(self.innovation_counter, node_type=NodeType.OUTPUT))
             self.innovation_counter += 1
 
         # Connect some of the inputs directly to outputs
@@ -90,19 +100,44 @@ class Genome(object):
                 # One of the lists ran out
                 break
 
-
-
     # Implements the "add connection" mutation. Connect two nodes that 
     # are not currently connected, preserving feed-forwardness
     def add_connection():
+        # TODO not currently implemented because it can generate designs that are not electrically 
+        # realizable. If multiple outputs from one gate are connected to the same input, they are
+        # then connected to each other. If they are then driven to different levels, the result is 
+        # likely damage to the output drivers. 
         pass
 
     # Implements the "add node" mutation. Select a connection, deactivate it, replace it with a node
     # that has the connection's inputs and outputs. Since this is for 2+ input gates, also connect
     # the other input of the gate to some node's output, preserving feed-forwardness. 
-    def add_node():
-        pass
+    def add_node(self):
+        # Pick a random connection and deactivate it
+        conn = random.choice(self.connections)
+        conn.enabled = False
+        
+        # Get the layer between the two things the connection used to connect
+        in_layer = [n for n in self.nodes if n.get_innovation() == conn.input][0].layer
+        out_layer = [n for n in self.nodes if n.get_innovation() == conn.output][0].layer
+        new_layer = (in_layer + out_layer)/2.0
 
+        # Create a new node, random type, in the calculated layer
+        new_node = Node(self.innovation_counter, new_layer)
+        self.nodes.append(new_node)
+        self.innovation_counter += 1 
+
+        # Connections for new node in place of old connection
+        self.connections.append(Connection(conn.input, new_node.get_innovation(), self.innovation_counter))
+        self.innovation_counter += 1 
+        self.connections.append(Connection(new_node.get_innovation(), conn.output, self.innovation_counter))
+        self.innovation_counter += 1 
+        
+        # Random node of a lower layer than this one. Strictly lower, so we don't get loops.
+        lower_node = random.choice(list(filter(lambda n: n.layer < new_layer and n.innovation != conn.input, self.nodes)))
+        # TODO what if there is no lower node?
+        self.connections.append(Connection(lower_node.get_innovation(), new_node.get_innovation(), self.innovation_counter))
+        self.innovation_counter += 1
 
 # Let's try implementing XOR. 
 #
@@ -125,44 +160,101 @@ class Genome(object):
 #        [1,0]:[1],
 #        [1,1]:[1]}
 
+def get_input_nodes(genome, node):
+        # Get the innovations/ids for the nodes that that connect to this one
+        nodes_out = list(filter(lambda conn: (conn.output == node.innovation) and conn.enabled, genome.connections))
+        assert(len(nodes_out) >= 2)
+        node_ids = [n.input for n in nodes_out]
+        # Get the nodes
+        return list(filter(lambda node: node.innovation in node_ids, genome.nodes))
+
+# TODO this needs mad cleanup. There is a lot of repetition with very minor variation
+# TODO also the genome filter expressions should probably be some kind of hashes or something for speeeeed
+def build_expression(genome, node):
+    # Expression at a node is the node operation on each of the expressions of its inputs
+    if node.get_type() is NodeType.OUTPUT:
+        # Get the innovation/id for the node that has this as its output
+        node_innov = list(filter(lambda conn: (conn.output == node.innovation) and conn.enabled, genome.connections))
+        assert(len(node_innov) == 1)
+        node_innov = node_innov[0].input
+        # Get the node itself and make the recursive call
+        out_node = list(filter(lambda node: node.innovation == node_innov, genome.nodes))[0]
+        return f"out_{node.innovation} = {build_expression(genome, out_node)}"
+    elif node.get_type() is NodeType.AND:
+        return " AND  ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+    elif node.get_type() is NodeType.OR:
+        return " OR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+    elif node.get_type() is NodeType.NAND:
+        return " NAND ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+    elif node.get_type() is NodeType.NOR:
+        return " NOR ".join([build_expression(genome, n) for n in get_input_nodes(genome, node)])
+    elif node.get_type() is NodeType.INPUT:
+        return f"in_{node.innovation}"
+
 def evaluate(genome, truth):
     # TODO convert genome into a boolean expression
     # For each output, do a depth first traversal of the tree rooted at the output. The inputs are the 
     # leaves of the tree. Return an expression that can be evaluated with eval or whatever. 
     # Evaluate the expressions in order, save the values to a list and return that. 
+    for node in list(filter(lambda node: node.get_type() is NodeType.OUTPUT, genome.nodes)):
+        print(build_expression(genome, node))
 
-    score = 0
-    for key in truth.keys():
-        # If applying the key to the boolean expression matches the result, 
-        # add one to the score, otherwise don't add to the score
-        pass
+    # score = 0
+    # for key in truth.keys():
+    #     # If applying the key to the boolean expression matches the result, 
+    #     # add one to the score, otherwise don't add to the score
+    #     pass
     
-    #Score is how many rows this expression got right out of a truth table
-    return score/len(truth)
+    # #Score is how many rows this expression got right out of a truth table
+    # return score/len(truth)
 
 
 def dot_print(genome, filename):
     # Convert a genome into a dot file for rendering
     with open(filename, 'w') as dotfile:
         dotfile.write("digraph {\n")
+        for node in genome.nodes:
+            if node.get_type() is NodeType.INPUT:
+                dotfile.write(f"  {node.get_innovation()} [shape=invtriangle]\n")
+            elif node.get_type() is NodeType.OUTPUT:
+                dotfile.write(f"  {node.get_innovation()} [shape=triangle]\n")
+            elif node.get_type() is NodeType.AND:
+                dotfile.write(f"  {node.get_innovation()} [shape=diamond]\n")
+            elif node.get_type() is NodeType.OR:
+                dotfile.write(f"  {node.get_innovation()} [shape=house]\n")
+            elif node.get_type() is NodeType.NAND:
+                dotfile.write(f"  {node.get_innovation()} [shape=trapezium]\n")
+            elif node.get_type() is NodeType.NOR:
+                dotfile.write(f"  {node.get_innovation()} [shape=box]\n")
+
         for conn in genome.connections:
-            dotfile.write(f"\t{conn.input} -> {conn.output}")
-        dotfile.write("}")
-
-
+            if conn.enabled:
+                dotfile.write(f"  {conn.input} -> {conn.output}\n")
+            else:
+                dotfile.write(f"  {conn.input} -> {conn.output} [style=dotted]\n")
+        dotfile.write("}\n")
     
 if __name__ == "__main__":
-    input_count = 2
-    output_count = 1
-    total_population = 100
-    population = []
+    # input_count = 2
+    # output_count = 1
+    # total_population = 100
+    # population = []
+
+    g = Genome(5, 1)
+    for ii in range(10):
+        g.add_node()
+        dot_print(g, f"add_{ii}_nodes.dot")
+        evaluate(g, True)
+
     # Generate a lot of genomes with two inputs and one output
-    for ii in range(total_population):
-        population.append(Genome(input_count, output_count))
+    # for ii in range(total_population):
+    #     population.append(Genome(input_count, output_count))
 
-    for idx, genome in enumerate(population):
-        dot_print(genome, f"{idx}_genome.dot")
+    # for idx, genome in enumerate(population):
+    #     dot_print(genome, f"{idx}_genome.dot")
 
+    #     print(f"{idx} "), evaluate(genome, True)
+    
     # For each genome, evaluate it
     # scores = []
     # for g in population:
