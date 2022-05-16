@@ -1,5 +1,5 @@
 # FFBN with NEAT
-FFBN is feed-forward boolean networks. FFBNs are a network where nodes are boolean operations (e.g. AND, OR, NOT, etc) and where the network doesn't have loops (data flows through it in one direction). NEAT is NeuroEvolution of Augmenting Topologies. It's a genetic algorithm for what gets called "architecture search" in deep networks. 
+FFBN is feed-forward boolean network. FFBNs are a network where nodes are boolean operations (e.g. AND, OR, NOT, etc) and where the network doesn't have loops (data flows through it in one direction). NEAT is NeuroEvolution of Augmenting Topologies. It's a genetic algorithm for what gets called "architecture search" in deep networks. 
 
 The idea of FFBNs created with NEAT is that the resulting network is effectively a boolean expression, and so can be implemented in hardware on e.g. an FPGA if needed, and so will be very very fast.
 
